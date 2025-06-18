@@ -35,14 +35,13 @@ public class Contract {
         if (installments == null || installments.isEmpty()) {
             return Optional.empty();
         }
-             OptionalDouble minOptional = installments.stream()
-                                       .mapToDouble(Installment::getAmount)
-                                       .min();
-             if (minOptional.isPresent()) {
-                 return Optional.of(minOptional.getAsDouble());
-             } else {
-                 return Optional.empty();
-             }
+             // Filter for installments with amount > 0 before finding the minimum
+             OptionalDouble minCost = installments.stream()
+                                         .filter(inst -> inst.getAmount() > 1e-9) // Consider amounts > 0 (use tolerance for double)
+                                         .mapToDouble(Installment::getAmount)
+                                         .min();
+
+             return minCost.isPresent() ? Optional.of(minCost.getAsDouble()) : Optional.empty();
     }
 
     @Override

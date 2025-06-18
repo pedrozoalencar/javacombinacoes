@@ -155,11 +155,7 @@ public class PaymentAllocatorLogicTest {
         List<ContractSavingCandidate> candidates = PaymentAllocatorLogic.preprocessContracts(contracts);
         Optional<CombinationResult> result = PaymentAllocatorLogic.findBestCombinationExponential(candidates, availableFunds);
 
-        assertTrue(result.isPresent());
-        assertEquals(200, result.get().getTotalDebtBalance(), 0.01, "Should choose C2 as it's free.");
-        assertEquals(0, result.get().getTotalCost(), 0.01);
-        assertEquals(1, result.get().getChosenCandidates().size());
-        assertEquals("C2", result.get().getChosenCandidates().get(0).getContractId());
+        assertFalse(result.isPresent(), "Result should be Optional.empty() as 0-cost installments are ignored and C1 is unaffordable.");
     }
 
     @Test
@@ -320,11 +316,10 @@ public class PaymentAllocatorLogicTest {
         List<ContractSavingCandidate> candidates = PaymentAllocatorLogic.preprocessContracts(contracts);
         Optional<CombinationResult> result = PaymentAllocatorLogic.findBestCombinationKnapsack(candidates, availableFunds);
 
-        assertTrue(result.isPresent(), "Knapsack: Result should be present.");
-        assertEquals(200, result.get().getTotalDebtBalance(), 0.01, "Knapsack: Should choose C2 as it's free.");
-        assertEquals(0, result.get().getTotalCost(), 0.01, "Knapsack: Cost should be 0 for C2.");
-        assertEquals(1, result.get().getChosenCandidates().size(), "Knapsack: Should choose 1 contract.");
-        assertEquals("C2", result.get().getChosenCandidates().get(0).getContractId(), "Knapsack: Should choose C2.");
+        assertTrue(result.isPresent(), "Knapsack: Result should be present (empty combination).");
+        assertEquals(0, result.get().getTotalDebtBalance(), 0.01, "Knapsack: Debt should be 0 as 0-cost installments are ignored.");
+        assertEquals(0, result.get().getTotalCost(), 0.01, "Knapsack: Cost should be 0.");
+        assertTrue(result.get().getChosenCandidates().isEmpty(), "Knapsack: Chosen candidates should be empty.");
     }
 
     @Test

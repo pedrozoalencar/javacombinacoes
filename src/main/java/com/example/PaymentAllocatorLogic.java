@@ -227,44 +227,69 @@ public class PaymentAllocatorLogic {
         //    AND availableFunds were positive (i.e. we had money to spend)
         //    AND there was at least one candidate/item with positive debt balance (value)
         //    THEN it means no valuable item could be afforded/chosen.
-        boolean hasPositiveValueItem = false;
-        for(KnapsackItem item : items) if(item.value > 1e-9) hasPositiveValueItem = true;
+        double maxDebt = dp[items.size()][scaledCapacity];
 
-        if (maxTotalDebt < 1e-9 && !candidates.isEmpty() && availableFunds > 1e-9 && hasPositiveValueItem) {
-            return Optional.empty();
-        }
+        List<ContractSavingCandidate> chosen_candidates = new ArrayList<>();
+        double total_actual_cost = 0;
+        int current_w = scaledCapacity;
 
-        // If maxTotalDebt is 0 (and it passed the above check, e.g. no positive value items existed or funds were 0),
-        // then we proceed to reconstruct, which will result in an empty list of chosen_candidates.
-
-        List<ContractSavingCandidate> chosen_candidates_list = new ArrayList<>();
-        double actual_total_cost = 0;
-        int current_scaled_capacity = scaledCapacity;
-
-        for (int i = items.size(); i > 0 && current_scaled_capacity >=0 ; i--) {
-            // Check if item i was chosen.
-            // It was chosen if dp[i][current_scaled_capacity] is different from dp[i-1][current_scaled_capacity]
-            // Need to be careful with floating point comparisons.
-            // A chosen item means dp[i][current_scaled_capacity] == items.get(i-1).value + dp[i-1][current_scaled_capacity - items.get(i-1).scaledWeight]
+        for (int i = items.size(); i > 0; i--) {
             KnapsackItem currentItem = items.get(i-1);
-            double valueIfChosen = currentItem.value + dp[i-1][Math.max(0,current_scaled_capacity - currentItem.scaledWeight)];
-            // Math.abs(dp[i][current_scaled_capacity] - valueIfChosen) < 1e-9
-            // A simpler check: if dp[i][w] > dp[i-1][w], it means item i made a difference.
-            if (dp[i][current_scaled_capacity] > dp[i-1][current_scaled_capacity] + 1e-9) { // Check if item i contributed
-                 // Ensure that this path is only taken if item was affordable
-                if (currentItem.scaledWeight <= current_scaled_capacity) {
-                    chosen_candidates_list.add(currentItem.originalCandidate);
-                    actual_total_cost += currentItem.originalCost;
-                    current_scaled_capacity -= currentItem.scaledWeight;
+            double val_without_item = dp[i-1][current_w];
+            double val_with_item = -1.0; // Sentinel if item cannot fit or not considered
+
+            if (current_w >= currentItem.scaledWeight) {
+                val_with_item = dp[i-1][current_w - currentItem.scaledWeight] + currentItem.value;
+            }
+
+            // Check if taking the item is the reason dp[i][current_w] has its value
+            // This means dp[i][current_w] should be approximately val_with_item
+            // and val_with_item should be greater or equal to val_without_item (within tolerance)
+            if (current_w >= currentItem.scaledWeight &&
+                Math.abs(dp[i][current_w] - val_with_item) < 1e-9 &&
+                val_with_item >= val_without_item - 1e-9) {
+
+                chosen_candidates.add(currentItem.originalCandidate);
+                total_actual_cost += currentItem.originalCost;
+                current_w -= currentItem.scaledWeight;
+            }
+            // Else, the item was not taken (or taking it was not better/equal), so dp[i][current_w] came from dp[i-1][current_w]
+        }
+        java.util.Collections.reverse(chosen_candidates);
+
+        // IMPORTANT: finalMaxDebtProtected is directly from the DP table.
+        double finalMaxDebtProtected = dp[items.size()][scaledCapacity];
+
+        // System.err.println("Knapsack: finalMaxDebtProtected from DP table = " + finalMaxDebtProtected + " for capacity " + scaledCapacity + " with items " + items.size());
+
+        if (finalMaxDebtProtected < 1e-9) { // Max possible debt from DP table is effectively zero
+            // Logic consistent with the refined exponential version for when to return Optional.empty()
+            // vs. an empty CombinationResult (0 debt, 0 cost).
+            if (!candidates.isEmpty() && availableFunds > 1e-9) {
+                boolean anyPositiveDebtOriginalCandidate = false;
+                for (ContractSavingCandidate cand : candidates) { // Check original candidates passed to method
+                    if (cand.getDebtBalance() > 1e-9) {
+                        anyPositiveDebtOriginalCandidate = true;
+                        break;
+                    }
+                }
+                if (anyPositiveDebtOriginalCandidate) {
+                    // There were positive-debt candidates and funds, but DP result is 0.
+                    // This implies no valuable items were chosen.
+                    return Optional.empty();
                 }
             }
+            // Otherwise, 0 debt is the correct optimal (e.g., no candidates, or no positive-debt candidates)
+            // chosen_candidates should be empty if finalMaxDebtProtected is 0, ensure this consistency.
+            return Optional.of(new CombinationResult(new ArrayList<>(), 0, 0));
+        } else {
+            // finalMaxDebtProtected > 0.
+            // The chosen_candidates list and total_actual_cost should reflect this.
+            // If chosen_candidates is empty at this point AND finalMaxDebtProtected > 0,
+            // it indicates a fundamental flaw in the reconstruction logic for this case.
+            // The tests will fail if total_actual_cost or chosen_candidates are inconsistent with finalMaxDebtProtected.
+            // For now, we pass the reconstructed list and cost.
+            return Optional.of(new CombinationResult(chosen_candidates, total_actual_cost, finalMaxDebtProtected));
         }
-        java.util.Collections.reverse(chosen_candidates_list);
-
-        // If chosen_candidates_list is empty after reconstruction, it means the optimal solution is to pick nothing.
-        // This covers cases like: no items fit, all valuable items were too expensive, or all items had 0 value.
-        // The maxTotalDebt would be 0 in such cases.
-        // We need to return CombinationResult(emptyList, 0, 0) in this case, unless Optional.empty() was already returned.
-        return Optional.of(new CombinationResult(chosen_candidates_list, actual_total_cost, dp[items.size()][scaledCapacity]));
     }
 }
